@@ -1,0 +1,83 @@
+<div style="padding: 20px; display: flex; flex-direction: column; height: 100%;">
+    <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+        <div>
+            <h2 style="margin: 0; color: #333;">Slack 발생 알람 빈도수 (지역별)</h2>
+            <p style="color: #666; font-size: 0.9em; margin-top: 5px;">선택한 월의 일별 통계 내역입니다.</p>
+        </div>
+        <div style="background: #fff; padding: 10px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+            <label for="month-picker" style="font-weight: bold; margin-right: 10px;">조회월 선택:</label>
+            <input type="month" id="month-picker" value="2025-12" 
+                   style="padding: 5px; border: 1px solid #ccc; border-radius: 4px;">
+            <button onclick="window.onBtExport()" style="padding: 6px 15px; background: #27ae60; color: white; border: none; border-radius: 4px; cursor: pointer;">Excel 다운로드</button>        
+        </div>
+    </div>
+
+    <div id="grid-team1" class="ag-theme-alpine" style="flex-grow: 1; width: 100%; min-height: 400px;"></div>
+</div>
+
+<script>
+    window.initPage = function(teamId) {
+        const monthPicker = document.getElementById('month-picker');
+        let gridApi;
+
+        // 1. 그리드 설정
+        const gridOptions = {
+            columnDefs: [
+                { field: "RegionName", headerName: "지역구분", width: 120, pinned: 'left', filter: true },
+                ...Array.from({length: 31}, (_, i) => ({
+                    field: `d${String(i + 1).padStart(2, '0')}`,
+                    headerName: String(i + 1).padStart(2, '0'),
+                    width: 60,
+                    type: 'numericColumn'
+                })),
+                { field: "total_count", headerName: "합계", width: 100, pinned: 'right', 
+                  cellStyle: {fontWeight: 'bold', backgroundColor: '#f8f9fa'} }
+            ],
+            rowData: [],
+            pagination: true,
+            paginationPageSize: 20
+        };
+
+        // 2. 그리드 생성
+        const gridDiv = document.querySelector('#grid-team1');
+        gridDiv.innerHTML = ''; 
+        gridApi = agGrid.createGrid(gridDiv, gridOptions);
+
+        // 3. 데이터 로드 함수
+        function fetchData(selectedMonth) {
+            gridApi.showLoadingOverlay();
+            fetch(`/api/query/${teamId}?month=${selectedMonth}`)
+                .then(response => {
+                    if (!response.ok) throw new Error("데이터 로딩 실패");
+                    return response.json();
+                })
+                .then(data => {
+                    gridApi.setGridOption('rowData', data);
+                })
+                .catch(error => {
+                    console.error("Error:", error);
+                    gridApi.setGridOption('rowData', []);
+                });
+        }
+
+        // 4. 이벤트 리스너
+        monthPicker.addEventListener('change', (e) => {
+            fetchData(e.target.value);
+        });
+
+        // 초기 데이터 로드
+        fetchData(monthPicker.value);
+
+        // 5. 엑셀(CSV) 내보내기 함수 (전역 window 객체에 할당)
+        window.onBtExport = function() {
+            if (!gridApi) return;
+            
+            const params = {
+                // monthPicker.value를 사용하여 파일명 생성
+                fileName: `Slack_Region_${monthPicker.value}.csv`,
+                columnSeparator: ','
+            };
+            gridApi.exportDataAsCsv(params);
+        };
+    };
+</script>

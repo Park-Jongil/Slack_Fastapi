@@ -1,0 +1,84 @@
+<div style="padding: 20px; display: flex; flex-direction: column; height: 100%;">
+    <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: flex-end;">
+        <div>
+            <h2 style="margin: 0; color: #333;">Slack 최고빈도 알람 발생 현황</h2>
+            <p style="color: #666; font-size: 0.9em; margin-top: 5px;">기간 내 Firing 상태의 알람 집계 내역입니다.</p>
+        </div>
+        
+        <div style="display: flex; gap: 10px; align-items: center; background: #fff; padding: 10px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+            <div>
+                <label style="font-size: 0.8em; color: #555; display: block;">시작일</label>
+                <input type="date" id="start-date" value="2025-10-13" style="padding: 5px; border: 1px solid #ccc; border-radius: 4px;">
+            </div>
+            <span style="margin-top: 15px;">~</span>
+            <div>
+                <label style="font-size: 0.8em; color: #555; display: block;">종료일</label>
+                <input type="date" id="end-date" value="2025-10-31" style="padding: 5px; border: 1px solid #ccc; border-radius: 4px;">
+            </div>
+            <button onclick="window.loadAlarmData()" style="margin-top: 15px; padding: 6px 15px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer;">조회</button>
+            <button onclick="window.onBtExport()" style="padding: 6px 15px; background: #27ae60; color: white; border: none; border-radius: 4px; cursor: pointer;">Excel 다운로드</button>        
+        </div>
+    </div>
+
+    <div id="grid-alarm" class="ag-theme-alpine" style="flex-grow: 1; width: 100%; min-height: 450px;"></div>
+</div>
+
+<script>
+    window.initPage = function(teamId) {
+        let gridApi;
+        const startInput = document.getElementById('start-date');
+        const endInput = document.getElementById('end-date');
+
+        // 1. 그리드 설정 (쿼리 결과 컬럼에 맞춤)
+        const gridOptions = {
+            columnDefs: [
+                { field: "Alarm", headerName: "알람명", flex: 2, filter: true },
+                { field: "Region", headerName: "지역", flex: 1, filter: true },
+                { field: "NodeName", headerName: "노드명", flex: 1.5, filter: true },
+                { field: "cnt", headerName: "발생 횟수", width: 120, sort: 'desc', 
+                  cellStyle: {textAlign: 'right', fontWeight: 'bold', color: '#e74c3c'} }
+            ],
+            rowData: [],
+            pagination: true,
+            paginationPageSize: 15
+        };
+
+        // 2. 그리드 생성
+        const gridDiv = document.querySelector('#grid-alarm');
+        gridDiv.innerHTML = '';
+        gridApi = agGrid.createGrid(gridDiv, gridOptions);
+
+        // 3. 데이터 로드 함수 정의
+        window.loadAlarmData = function() {
+            const start = startInput.value;
+            const end = endInput.value;
+
+            gridApi.showLoadingOverlay();
+
+            // API 호출 시 시작일과 종료일을 파라미터로 전달
+            fetch(`/api/slack/alarms?start=${start}&end=${end}`)
+                .then(res => {
+                    if(!res.ok) throw new Error("조회 실패");
+                    return res.json();
+                })
+                .then(data => {
+                    gridApi.setGridOption('rowData', data);
+                })
+                .catch(err => {
+                    console.error(err);
+                    gridApi.setGridOption('rowData', []);
+                });
+        };
+
+        // 2. 엑셀(CSV) 내보내기 함수 추가
+        window.onBtExport = function() {
+            const params = {
+                fileName: `Slack_Alarms_${startInput.value}_${endInput.value}.csv`,
+                columnSeparator: ','
+            };
+            gridApi.exportDataAsCsv(params);
+        };
+        // 초기 실행
+        window.loadAlarmData();
+    };
+</script>

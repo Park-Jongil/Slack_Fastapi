@@ -1,0 +1,23 @@
+<div style="padding: 20px;">
+    <h2>기본 전용 대시보드</h2>
+    <p>여기는 기본팀의 특화된 UI가 들어가는 곳입니다.</p>
+    
+    <div id="grid-team1" class="ag-theme-alpine" style="height: 400px; width: 100%;"></div>
+</div>
+
+<script>
+    // 페이지 로드 시 실행될 전용 로직
+    window.initPage = function(teamId) {
+        const gridOptions = {
+            columnDefs: [{ field: "name" }, { field: "status" }, { field: "date" }],
+            rowData: []
+        };
+        const gridDiv = document.querySelector('#grid-team1');
+        const api = agGrid.createGrid(gridDiv, gridOptions);
+
+        // 데이터 로드
+        fetch(`/api/data/${teamId}`)
+            .then(res => res.json())
+            .then(data => api.setGridOption('rowData', data));
+    };
+</script>

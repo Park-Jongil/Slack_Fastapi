@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>FastAPI Split View</title>
+    <script src="https://cdn.jsdelivr.net/npm/ag-grid-community/dist/ag-grid-community.min.noStyle.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community/styles/ag-grid.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community/styles/ag-theme-alpine.css">
+    <style>
+        body { margin: 0; display: flex; height: 100vh; font-family: sans-serif; }
+        #sidebar { width: 250px; border-right: 1px solid #ccc; padding: 20px; background: #f9f9f9; overflow-y: auto; }
+        #content { flex: 1; padding: 20px; display: flex; flex-direction: column; }
+        .tree-node { cursor: pointer; padding: 5px; }
+        .tree-node:hover { background: #e0e0e0; }
+        .child-node { margin-left: 20px; font-size: 0.9em; color: #555; }
+        #myGrid { flex: 1; width: 100%; height: 100%; }
+        h3 { margin-top: 0; }
+    </style>
+</head>
+<body>
+
+    <div id="sidebar">
+        <h3>부서 목록</h3>
+        <div id="tree-container"></div>
+    </div>
+
+    <div id="content">
+        <h3 id="grid-title">항목을 선택하세요</h3>
+        <div id="myGrid" class="ag-theme-alpine"></div>
+    </div>
+
+    <script>
+        let gridApi;
+
+    // 1. 여기에 columnConfigs를 정의합니다!
+        const columnConfigs = {
+            "team1": [ 
+                { field: "id", headerName: "ID", width: 70 },
+                { field: "name", headerName: "영업담당자", flex: 1 },
+                { field: "status", headerName: "계약상태" },
+                { field: "date", headerName: "마감일" }
+            ],
+            "team3": [ 
+                { field: "id", headerName: "ID", width: 70 },
+                { field: "name", headerName: "프로젝트명", flex: 1 },
+                { field: "status", headerName: "진행단계" },
+                { field: "date", headerName: "배포예정일" }
+            ],
+            "default": [ 
+                { field: "id", headerName: "ID", width: 70 },
+                { field: "name", headerName: "이름", flex: 1 },
+                { field: "status", headerName: "상태" },
+                { field: "date", headerName: "날짜" }
+            ]
+        };
+
+        // 1. 트리 데이터 로드 및 렌더링
+        fetch('/api/tree')
+            .then(res => res.json())
+            .then(data => {
+                const container = document.getElementById('tree-container');
+                data.forEach(parent => {
+                    const pDiv = document.createElement('div');
+                    pDiv.className = 'tree-node';
+                    pDiv.innerHTML = `📁 <b>${parent.text}</b>`;
+                    container.appendChild(pDiv);
+
+                    parent.children.forEach(child => {
+                        const cDiv = document.createElement('div');
+                        cDiv.className = 'tree-node child-node';
+                        cDiv.innerText = `📄 ${child.text}`;
+                        cDiv.onclick = () => loadGridData(child.id, child.text);
+                        container.appendChild(cDiv);
+                    });
+                });
+            });
+
+        // 2. 그리드 초기화
+        const gridOptions = {
+            columnDefs: [
+                { field: "id", headerName: "ID", width: 70 },
+                { field: "name", headerName: "이름", flex: 1 },
+                { field: "status", headerName: "상태" },
+                { field: "date", headerName: "날짜" }
+            ],
+            rowData: []
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const gridDiv = document.querySelector('#myGrid');
+            gridApi = agGrid.createGrid(gridDiv, gridOptions);
+        });
+
+        // 3. 트리 클릭 시 데이터 로드 함수
+        function loadGridData(itemId, itemName) {
+            document.getElementById('grid-title').innerText = `${itemName} 상세 정보`;
+
+            // 1. 해당 팀의 컬럼 설정을 가져옴 (없으면 default 사용)
+            const newColumns = columnConfigs[itemId] || columnConfigs["default"];
+
+            // 2. 그리드의 컬럼 정의를 즉시 변경
+            gridApi.setGridOption('columnDefs', newColumns);
+
+            // 3. 데이터 로드
+            if (itemId == "team3" || itemId == "team4" ) {
+                fetch(`/api/data/${itemId}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        gridApi.setGridOption('rowData', data);
+                    });
+            } else {
+                fetch(`/api/query/${itemId}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        gridApi.setGridOption('rowData', data);
+                    });
+            }
+        }
+    </script>
+</body>
+</html>

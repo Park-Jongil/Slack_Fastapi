@@ -1,0 +1,19 @@
+
+
+-- 테이블 생성
+CREATE TABLE team_data (
+    id SERIAL PRIMARY KEY,            -- 자동 증가하는 기본키
+    team_id VARCHAR(50) NOT NULL,     -- 트리의 ID와 매칭 (team1, team2 등)
+    name VARCHAR(255) NOT NULL,       -- 데이터 이름 또는 담당자명
+    status VARCHAR(50),               -- 상태 (완료, 진행중 등)
+    date VARCHAR(20)                  -- 날짜 (YYYY-MM-DD 형식)
+);
+
+-- (선택사항) 조회 성능 향상을 위해 team_id에 인덱스 추가
+CREATE INDEX idx_team_data_team_id ON team_data(team_id);
+
+
+INSERT INTO team_data (team_id, name, status, date) VALUES 
+('team1', '홍길동 영업건', '완료', '2023-12-01'),
+('team1', '김철수 미팅', '진행중', '2023-12-05'),
+('team3', 'FastAPI 개발 프로젝트', '대기', '2023-12-10');

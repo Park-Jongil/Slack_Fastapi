@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>FastAPI Split View Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/ag-grid-community/dist/ag-grid-community.min.noStyle.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community/styles/ag-grid.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community/styles/ag-theme-alpine.css">
+
+    <style>
+        /* 전체 레이아웃 설정 */
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex; /* 가로로 배치 */
+            height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+        }
+
+        /* 왼쪽 트리 영역 */
+        #sidebar {
+            width: 250px;
+            min-width: 250px;
+            background-color: #2c3e50;
+            color: white;
+            padding: 20px;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+            overflow-y: auto;
+        }
+
+        /* 오른쪽 데이터 영역 */
+        #content-area {
+            flex-grow: 1; /* 나머지 공간 모두 차지 */
+            background-color: #ecf0f1;
+            padding: 0;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* 트리 스타일 */
+        .tree-header { font-size: 1.2em; margin-bottom: 20px; border-bottom: 1px solid #34495e; padding-bottom: 10px; }
+        .dept-node { margin-top: 15px; font-weight: bold; color: #bdc3c7; }
+        .team-node {
+            padding: 8px 15px;
+            cursor: pointer;
+            transition: background 0.3s;
+            border-radius: 4px;
+            margin-left: 10px;
+            font-weight: normal;
+        }
+        .team-node:hover { background-color: #34495e; color: #3498db; }
+
+        /* 초기 안내 문구 */
+        .welcome-msg {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100%;
+            color: #7f8c8d;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="sidebar">
+        <div class="tree-header">운영서비스 현황</div>
+        <div id="tree-container">
+            <div class="dept-node">📁 Slack </div>
+            <div class="team-node" onclick="loadPage('slack1')">📄 Slack(지역별구분)</div>
+            <div class="team-node" onclick="loadPage('slack2')">📄 Slack(알람별구분)</div>
+            <div class="team-node" onclick="loadPage('slack3')">📄 Slack(최고빈도알람)</div>
+            
+            <div class="dept-node">📁 Rancher</div>
+            <div class="team-node" onclick="loadPage('team3')">📄 현재 클러스터/노드 수량</div>
+            <div class="team-node" onclick="loadPage('team4')">📄 전체 클러스트 현황</div>
+            <div class="team-node" onclick="loadPage('team4')">📄 전체 노드 현황</div>
+        </div>
+    </div>
+
+    <div id="content-area">
+        <div class="welcome-msg">
+            <h2>트리 메뉴에서 항목을 선택해 주세요.</h2>
+        </div>
+    </div>
+
+    <script>
+        function loadPage(teamId) {
+            const contentArea = document.getElementById('content-area');
+            
+            fetch(`/pages/${teamId}`)
+                .then(res => res.text())
+                .then(html => {
+                    contentArea.innerHTML = html;
+
+                    // innerHTML로 삽입된 <script> 태그는 자동으로 실행되지 않으므로 
+                    // 직접 스크립트 태그를 찾아서 실행시켜주는 과정이 필요할 수 있습니다.
+                    const scripts = contentArea.querySelectorAll("script");
+                    scripts.forEach(oldScript => {
+                        const newScript = document.createElement("script");
+                        newScript.text = oldScript.text;
+                        oldScript.parentNode.replaceChild(newScript, oldScript);
+                    });
+
+                    // 스크립트 실행 후 initPage 호출
+                    setTimeout(() => {
+                        if (window.initPage) window.initPage(teamId);
+                    }, 50); // 약간의 지연을 주어 DOM 안착 대기
+                });
+        }
+    </script>
+</body>
+</html>
