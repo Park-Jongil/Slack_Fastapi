@@ -206,13 +206,3 @@ async def get_alarm_statistics(start: str, end: str, db: Session = Depends(get_d
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
-
-
-###
-    query = text("""
-        SELECT id, name, status, date 
-        FROM team_data 
-        WHERE team_id = :tid 
-        ORDER BY date DESC
-    """)
-###
