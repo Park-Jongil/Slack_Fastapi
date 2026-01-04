@@ -6,7 +6,7 @@
         </div>
         <div style="background: #fff; padding: 10px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
             <label for="month-picker" style="font-weight: bold; margin-right: 10px;">조회월 선택:</label>
-            <input type="month" id="month-picker" value="2025-12" 
+            <input type="month" id="month-picker" 
                    style="padding: 5px; border: 1px solid #ccc; border-radius: 4px;">
             <button onclick="window.onBtExport()" style="padding: 6px 15px; background: #27ae60; color: white; border: none; border-radius: 4px; cursor: pointer;">Excel 다운로드</button>        
         </div>
@@ -19,6 +19,13 @@
     window.initPage = function(teamId) {
         const monthPicker = document.getElementById('month-picker');
         let gridApi;
+
+// --- 현재 날짜로 초기값 설정 로직 추가 ---
+        const now = new Date();
+        const currentYear = now.getFullYear();
+        const currentMonth = String(now.getMonth() + 1).padStart(2, '0'); // 월은 0부터 시작하므로 +1
+        const formattedDate = `${currentYear}-${currentMonth}`;
+        monthPicker.value = formattedDate;
 
         // 1. 그리드 설정
         const gridOptions = {

@@ -8,12 +8,12 @@
         <div style="display: flex; gap: 10px; align-items: center; background: #fff; padding: 10px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
             <div>
                 <label style="font-size: 0.8em; color: #555; display: block;">시작일</label>
-                <input type="date" id="start-date" value="2025-10-13" style="padding: 5px; border: 1px solid #ccc; border-radius: 4px;">
+                <input type="date" id="start-date"  style="padding: 5px; border: 1px solid #ccc; border-radius: 4px;">
             </div>
             <span style="margin-top: 15px;">~</span>
             <div>
                 <label style="font-size: 0.8em; color: #555; display: block;">종료일</label>
-                <input type="date" id="end-date" value="2025-10-31" style="padding: 5px; border: 1px solid #ccc; border-radius: 4px;">
+                <input type="date" id="end-date"  style="padding: 5px; border: 1px solid #ccc; border-radius: 4px;">
             </div>
             <button onclick="window.loadAlarmData()" style="margin-top: 15px; padding: 6px 15px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer;">조회</button>
             <button onclick="window.onBtExport()" style="padding: 6px 15px; background: #27ae60; color: white; border: none; border-radius: 4px; cursor: pointer;">Excel 다운로드</button>        
@@ -28,6 +28,21 @@
         let gridApi;
         const startInput = document.getElementById('start-date');
         const endInput = document.getElementById('end-date');
+
+// --- 날짜 자동 설정 로직 ---
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+
+        // 1일 설정 (YYYY-MM-01)
+        const firstDayOfMonth = `${year}-${month}-01`;
+        // 오늘 설정 (YYYY-MM-DD)
+        const today = `${year}-${month}-${day}`;
+
+        startInput.value = firstDayOfMonth;
+        endInput.value = today;
+        // -------------------------
 
         // 1. 그리드 설정 (쿼리 결과 컬럼에 맞춤)
         const gridOptions = {
