@@ -29,7 +29,7 @@
         const startInput = document.getElementById('start-date');
         const endInput = document.getElementById('end-date');
 
-// --- 날짜 자동 설정 로직 ---
+        // 날짜 자동 설정 로직
         const now = new Date();
         const year = now.getFullYear();
         const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -42,9 +42,8 @@
 
         startInput.value = firstDayOfMonth;
         endInput.value = today;
-        // -------------------------
 
-        // 1. 그리드 설정 (쿼리 결과 컬럼에 맞춤)
+        // 그리드 설정
         const gridOptions = {
             columnDefs: [
                 { field: "Alarm", headerName: "알람명", flex: 2, filter: true },
@@ -58,41 +57,71 @@
             paginationPageSize: 15
         };
 
-        // 2. 그리드 생성
+        // 그리드 생성
         const gridDiv = document.querySelector('#grid-alarm');
+        if (!gridDiv) {
+            console.error('Grid container not found');
+            return;
+        }
+        
         gridDiv.innerHTML = '';
         gridApi = agGrid.createGrid(gridDiv, gridOptions);
 
-        // 3. 데이터 로드 함수 정의
+        // 데이터 로드 함수 정의
         window.loadAlarmData = function() {
+            if (!gridApi) {
+                console.error('Grid API not available');
+                return;
+            }
+
             const start = startInput.value;
             const end = endInput.value;
 
+            if (!start || !end) {
+                alert('시작일과 종료일을 선택해주세요.');
+                return;
+            }
+
+            console.log(`Loading alarm data: ${start} ~ ${end}`);
             gridApi.showLoadingOverlay();
 
             // API 호출 시 시작일과 종료일을 파라미터로 전달
             fetch(`/api/slack/alarms?start=${start}&end=${end}`)
                 .then(res => {
-                    if(!res.ok) throw new Error("조회 실패");
+                    console.log('Response status:', res.status);
+                    if(!res.ok) {
+                        throw new Error(`HTTP error! status: ${res.status}`);
+                    }
                     return res.json();
                 })
                 .then(data => {
+                    console.log('Received data:', data);
                     gridApi.setGridOption('rowData', data);
+                    if (data.length === 0) {
+                        console.warn('No data returned from API');
+                    }
                 })
                 .catch(err => {
-                    console.error(err);
+                    console.error('Error loading alarm data:', err);
                     gridApi.setGridOption('rowData', []);
+                    alert('데이터를 불러오는 중 오류가 발생했습니다: ' + err.message);
                 });
         };
 
-        // 2. 엑셀(CSV) 내보내기 함수 추가
+        // 엑셀(CSV) 내보내기 함수
         window.onBtExport = function() {
+            if (!gridApi) {
+                console.error('Grid API not available');
+                return;
+            }
+            
             const params = {
                 fileName: `Slack_Alarms_${startInput.value}_${endInput.value}.csv`,
                 columnSeparator: ','
             };
             gridApi.exportDataAsCsv(params);
         };
+
         // 초기 실행
         window.loadAlarmData();
     };

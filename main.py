@@ -1,52 +1,25 @@
-from fastapi import FastAPI, Request, Depends
+from fastapi import FastAPI, Request, Depends, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import create_engine, Column, Integer, String, ForeignKey
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy import text  # text 함수 임포트 필요
+from sqlalchemy.orm import Session
 from typing import List
 import uvicorn
+import logging
 
-# 1. DB 설정 (본인의 Postgres 정보로 수정: user:password@host:port/dbname)
-DATABASE_URL = "postgresql://postgres:1331@localhost:5432/postgres"
+from database import get_db, engine
+from models import Base, TeamData, SalesData, SlackMessage
+from schemas import TeamDataResponse, StatisticsResponse, AlarmStatisticsResponse
+from queries import get_daily_statistics_query, get_alarm_statistics_query
 
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
-
-# 2. DB 테이블 모델 정의
-class TeamData(Base):
-    __tablename__ = "team_data"
-    id = Column(Integer, primary_key=True, index=True)
-    team_id = Column(String)  # team1, team2 등 트리 노드 ID와 매칭
-    name = Column(String)
-    status = Column(String)
-    date = Column(String)
-
-class SalesData(Base):
-    __tablename__ = "sales_data"
-    id = Column(Integer, primary_key=True)
-    team_id = Column(String)  # team1, team2 등 트리 노드 ID와 매칭
-    name = Column(String)
-    status = Column(String)
-    date = Column(String)
-
+# 로깅 설정
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # 서버 시작 시 테이블 생성 (실제 운영 시에는 Alembic 권장)
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI()
+app = FastAPI(title="운영서비스 현황 대시보드")
 templates = Jinja2Templates(directory="templates")
-
-# DB 세션 의존성
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
 
 # 팀 ID와 모델 클래스를 매핑
 TABLE_MAP = {
@@ -56,152 +29,81 @@ TABLE_MAP = {
     "team4": SalesData
 }
 
+# 쿼리 타입 매핑
+QUERY_TYPE_MAP = {
+    "slack1": "RegionName",
+    "slack2": "AlarmName"
+}
+
 @app.get("/", response_class=HTMLResponse)
 async def read_main(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
 @app.get("/pages/{team_id}", response_class=HTMLResponse)
 async def get_team_page(request: Request, team_id: str):
-    # team_id에 따라 다른 html 파일을 반환 (파일이 없을 경우 대비 예외처리 필요)
+    """팀 ID에 따른 전용 페이지 반환"""
     try:
-        return templates.TemplateResponse(f"{team_id}.html", {"request": request, "team_id": team_id})
-    except:
-        return templates.TemplateResponse("default.html", {"request": request})
-
-@app.get("/api/tree")
-async def get_tree():
-    # 이 부분은 고정된 트리 구조이거나, 필요시 다른 테이블에서 가져올 수 있습니다.
-    return [
-        {"id": "dept1", "text": "영업부", "children": [
-            {"id": "team1", "text": "영업 1팀"},
-            {"id": "team2", "text": "영업 2팀"}
-        ]},
-        {"id": "dept2", "text": "기술부", "children": [
-            {"id": "team3", "text": "개발팀"},
-            {"id": "team4", "text": "인프라팀"}
-        ]}
-    ]
+        return templates.TemplateResponse(
+            f"{team_id}.html", 
+            {"request": request, "team_id": team_id}
+        )
+    except Exception as e:
+        logger.warning(f"Template not found for {team_id}: {e}")
+        return templates.TemplateResponse(
+            "default.html", 
+            {"request": request, "team_id": team_id}
+        )
 
 
-@app.get("/api/data/{item_id}")
+@app.get("/api/data/{item_id}", response_model=List[TeamDataResponse])
 async def get_grid_data(item_id: str, db: Session = Depends(get_db)):
-    # 매핑 테이블에서 모델을 가져오고, 없으면 기본 TeamData 사용
-    model = TABLE_MAP.get(item_id, TeamData)
-    
-    results = db.query(model).filter(model.team_id == item_id).all()
-#    results = db.query(model).all()
-    return results
+    """팀 ID별 그리드 데이터 조회"""
+    try:
+        model = TABLE_MAP.get(item_id, TeamData)
+        results = db.query(model).filter(model.team_id == item_id).all()
+        return results
+    except Exception as e:
+        logger.error(f"Error fetching data for {item_id}: {e}")
+        raise HTTPException(status_code=500, detail="데이터 조회 중 오류가 발생했습니다")
 
-@app.get("/api/query/{item_id}")
+@app.get("/api/query/{item_id}", response_model=List[StatisticsResponse])
 async def get_query_data(item_id: str, month: str = "2025-12", db: Session = Depends(get_db)):
-    # 1. 생 SQL 쿼리 작성 (파라미터는 :name 형식을 권장 - SQL 인젝션 방지)
-    if (item_id=='slack1') :
-        query = text(
-            """
-            SELECT DISTINCT
-                "RegionName",
-                COALESCE(SUM(CASE WHEN "Day" = 1 THEN "Count" END), 0) AS d01,
-                COALESCE(SUM(CASE WHEN "Day" = 2 THEN "Count" END), 0) AS d02,
-                COALESCE(SUM(CASE WHEN "Day" = 3 THEN "Count" END), 0) AS d03,
-                COALESCE(SUM(CASE WHEN "Day" = 4 THEN "Count" END), 0) AS d04,
-                COALESCE(SUM(CASE WHEN "Day" = 5 THEN "Count" END), 0) AS d05,
-                COALESCE(SUM(CASE WHEN "Day" = 6 THEN "Count" END), 0) AS d06,
-                COALESCE(SUM(CASE WHEN "Day" = 7 THEN "Count" END), 0) AS d07,
-                COALESCE(SUM(CASE WHEN "Day" = 8 THEN "Count" END), 0) AS d08,
-                COALESCE(SUM(CASE WHEN "Day" = 9 THEN "Count" END), 0) AS d09,
-                COALESCE(SUM(CASE WHEN "Day" = 10 THEN "Count" END), 0) AS d10,
-                COALESCE(SUM(CASE WHEN "Day" = 11 THEN "Count" END), 0) AS d11,
-                COALESCE(SUM(CASE WHEN "Day" = 12 THEN "Count" END), 0) AS d12,
-                COALESCE(SUM(CASE WHEN "Day" = 13 THEN "Count" END), 0) AS d13,
-                COALESCE(SUM(CASE WHEN "Day" = 14 THEN "Count" END), 0) AS d14,
-                COALESCE(SUM(CASE WHEN "Day" = 15 THEN "Count" END), 0) AS d15,
-                COALESCE(SUM(CASE WHEN "Day" = 16 THEN "Count" END), 0) AS d16,
-                COALESCE(SUM(CASE WHEN "Day" = 17 THEN "Count" END), 0) AS d17,
-                COALESCE(SUM(CASE WHEN "Day" = 18 THEN "Count" END), 0) AS d18,
-                COALESCE(SUM(CASE WHEN "Day" = 19 THEN "Count" END), 0) AS d19,
-                COALESCE(SUM(CASE WHEN "Day" = 20 THEN "Count" END), 0) AS d20,
-                COALESCE(SUM(CASE WHEN "Day" = 21 THEN "Count" END), 0) AS d21,
-                COALESCE(SUM(CASE WHEN "Day" = 22 THEN "Count" END), 0) AS d22,
-                COALESCE(SUM(CASE WHEN "Day" = 23 THEN "Count" END), 0) AS d23,
-                COALESCE(SUM(CASE WHEN "Day" = 24 THEN "Count" END), 0) AS d24,
-                COALESCE(SUM(CASE WHEN "Day" = 25 THEN "Count" END), 0) AS d25,
-                COALESCE(SUM(CASE WHEN "Day" = 26 THEN "Count" END), 0) AS d26,
-                COALESCE(SUM(CASE WHEN "Day" = 27 THEN "Count" END), 0) AS d27,
-                COALESCE(SUM(CASE WHEN "Day" = 28 THEN "Count" END), 0) AS d28,
-                COALESCE(SUM(CASE WHEN "Day" = 29 THEN "Count" END), 0) AS d29,
-                COALESCE(SUM(CASE WHEN "Day" = 30 THEN "Count" END), 0) AS d30,
-                COALESCE(SUM(CASE WHEN "Day" = 31 THEN "Count" END), 0) AS d31,
-                SUM("Count") AS total_count
-            FROM "Statistics"
-            WHERE "AlarmMonth" = :month
-            GROUP BY "RegionName"
-            ORDER BY "RegionName";
-        """
-        )
-    elif (item_id=='slack2') :
-        query = text(
-            """
-            SELECT DISTINCT
-                "AlarmName",
-                COALESCE(SUM(CASE WHEN "Day" = 1 THEN "Count" END), 0) AS d01,
-                COALESCE(SUM(CASE WHEN "Day" = 2 THEN "Count" END), 0) AS d02,
-                COALESCE(SUM(CASE WHEN "Day" = 3 THEN "Count" END), 0) AS d03,
-                COALESCE(SUM(CASE WHEN "Day" = 4 THEN "Count" END), 0) AS d04,
-                COALESCE(SUM(CASE WHEN "Day" = 5 THEN "Count" END), 0) AS d05,
-                COALESCE(SUM(CASE WHEN "Day" = 6 THEN "Count" END), 0) AS d06,
-                COALESCE(SUM(CASE WHEN "Day" = 7 THEN "Count" END), 0) AS d07,
-                COALESCE(SUM(CASE WHEN "Day" = 8 THEN "Count" END), 0) AS d08,
-                COALESCE(SUM(CASE WHEN "Day" = 9 THEN "Count" END), 0) AS d09,
-                COALESCE(SUM(CASE WHEN "Day" = 10 THEN "Count" END), 0) AS d10,
-                COALESCE(SUM(CASE WHEN "Day" = 11 THEN "Count" END), 0) AS d11,
-                COALESCE(SUM(CASE WHEN "Day" = 12 THEN "Count" END), 0) AS d12,
-                COALESCE(SUM(CASE WHEN "Day" = 13 THEN "Count" END), 0) AS d13,
-                COALESCE(SUM(CASE WHEN "Day" = 14 THEN "Count" END), 0) AS d14,
-                COALESCE(SUM(CASE WHEN "Day" = 15 THEN "Count" END), 0) AS d15,
-                COALESCE(SUM(CASE WHEN "Day" = 16 THEN "Count" END), 0) AS d16,
-                COALESCE(SUM(CASE WHEN "Day" = 17 THEN "Count" END), 0) AS d17,
-                COALESCE(SUM(CASE WHEN "Day" = 18 THEN "Count" END), 0) AS d18,
-                COALESCE(SUM(CASE WHEN "Day" = 19 THEN "Count" END), 0) AS d19,
-                COALESCE(SUM(CASE WHEN "Day" = 20 THEN "Count" END), 0) AS d20,
-                COALESCE(SUM(CASE WHEN "Day" = 21 THEN "Count" END), 0) AS d21,
-                COALESCE(SUM(CASE WHEN "Day" = 22 THEN "Count" END), 0) AS d22,
-                COALESCE(SUM(CASE WHEN "Day" = 23 THEN "Count" END), 0) AS d23,
-                COALESCE(SUM(CASE WHEN "Day" = 24 THEN "Count" END), 0) AS d24,
-                COALESCE(SUM(CASE WHEN "Day" = 25 THEN "Count" END), 0) AS d25,
-                COALESCE(SUM(CASE WHEN "Day" = 26 THEN "Count" END), 0) AS d26,
-                COALESCE(SUM(CASE WHEN "Day" = 27 THEN "Count" END), 0) AS d27,
-                COALESCE(SUM(CASE WHEN "Day" = 28 THEN "Count" END), 0) AS d28,
-                COALESCE(SUM(CASE WHEN "Day" = 29 THEN "Count" END), 0) AS d29,
-                COALESCE(SUM(CASE WHEN "Day" = 30 THEN "Count" END), 0) AS d30,
-                COALESCE(SUM(CASE WHEN "Day" = 31 THEN "Count" END), 0) AS d31,
-                SUM("Count") AS total_count
-            FROM "Statistics"
-            WHERE "AlarmMonth" = :month
-            GROUP BY "AlarmName"
-            ORDER BY "AlarmName";
-        """
-        )
+    """일별 통계 데이터 조회 (피벗 형태)"""
+    try:
+        # 쿼리 타입 확인
+        group_by_field = QUERY_TYPE_MAP.get(item_id)
+        
+        if not group_by_field:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"지원하지 않는 item_id입니다: {item_id}"
+            )
+        
+        # 동적 쿼리 생성 및 실행
+        query = get_daily_statistics_query(group_by_field)
+        result = db.execute(query, {"month": month})
+        
+        return result.mappings().all()
     
-    # 2. 쿼리 실행
-    result = db.execute(query, {"month": month})
-    return result.mappings().all() 
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error executing query for {item_id}: {e}")
+        raise HTTPException(status_code=500, detail="쿼리 실행 중 오류가 발생했습니다") 
 
-@app.get("/api/slack/alarms")
+@app.get("/api/slack/alarms", response_model=List[AlarmStatisticsResponse])
 async def get_alarm_statistics(start: str, end: str, db: Session = Depends(get_db)):
-    # 요청하신 쿼리 내용 적용 (PostgreSQL 문법에 맞게 큰따옴표 사용)
-    query = text("""
-        SELECT "Alarm", "Region", "NodeName", count(*) as cnt
-        FROM "SlackMessage"
-        WHERE "NodeName" IS NOT NULL 
-          AND "DateTime" >= :start 
-          AND "DateTime" <= :end 
-          AND "Status" = 'Firing'
-        GROUP BY "Alarm", "Region", "NodeName"
-        ORDER BY cnt DESC
-    """)
-    
-    result = db.execute(query, {"start": start, "end": end})
-    return result.mappings().all()
+    """Slack 알람 통계 조회 (기간별)"""
+    try:
+        logger.info(f"Fetching alarm statistics from {start} to {end}")
+        query = get_alarm_statistics_query()
+        result = db.execute(query, {"start": start, "end": end})
+        data = result.mappings().all()
+        logger.info(f"Found {len(data)} alarm records")
+        return data
+    except Exception as e:
+        logger.error(f"Error fetching alarm statistics: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"알람 통계 조회 중 오류가 발생했습니다: {str(e)}")
 
 
 if __name__ == "__main__":

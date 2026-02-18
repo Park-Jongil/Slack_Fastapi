@@ -76,6 +76,7 @@
             <div class="team-node" onclick="loadPage('team3')">📄 현재 클러스터/노드 수량</div>
             <div class="team-node" onclick="loadPage('team4')">📄 전체 클러스트 현황</div>
             <div class="team-node" onclick="loadPage('team4')">📄 전체 노드 현황</div>
+            <div class="team-node" onclick="loadPage('team5')">📄 기간별 클러스터 변동그래프</div>
         </div>
     </div>
 
@@ -90,23 +91,32 @@
             const contentArea = document.getElementById('content-area');
             
             fetch(`/pages/${teamId}`)
-                .then(res => res.text())
+                .then(res => {
+                    if (!res.ok) throw new Error('페이지를 불러올 수 없습니다');
+                    return res.text();
+                })
                 .then(html => {
                     contentArea.innerHTML = html;
 
-                    // innerHTML로 삽입된 <script> 태그는 자동으로 실행되지 않으므로 
-                    // 직접 스크립트 태그를 찾아서 실행시켜주는 과정이 필요할 수 있습니다.
                     const scripts = contentArea.querySelectorAll("script");
                     scripts.forEach(oldScript => {
                         const newScript = document.createElement("script");
-                        newScript.text = oldScript.text;
+                        newScript.textContent = oldScript.textContent;
                         oldScript.parentNode.replaceChild(newScript, oldScript);
                     });
 
-                    // 스크립트 실행 후 initPage 호출
-                    setTimeout(() => {
-                        if (window.initPage) window.initPage(teamId);
-                    }, 50); // 약간의 지연을 주어 DOM 안착 대기
+                    if (typeof window.initPage === 'function') {
+                        window.initPage(teamId);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading page:', error);
+                    contentArea.innerHTML = `
+                        <div style="padding: 20px; text-align: center; color: #e74c3c;">
+                            <h2>페이지 로드 실패</h2>
+                            <p>${error.message}</p>
+                        </div>
+                    `;
                 });
         }
     </script>
